@@ -654,6 +654,22 @@ final class TDSChannel {
     }
 
     /**
+     * Close SSL Socket without overriding streams.
+     */
+    void closeSSLSocket() {
+        try {
+            if (logger.isLoggable(Level.FINER))
+                logger.finer(toString() + " Closing SSL socket");
+
+            sslSocket.close();
+        }
+        catch (IOException e) {
+            // Don't care if we can't close the SSL socket. We're done with it anyway.
+            logger.fine("Ignored error closing SSLSocket: " + e.getMessage());
+        }
+    }
+
+    /**
      * Disables SSL on this TDS channel.
      */
     void disableSSL() {
@@ -698,16 +714,7 @@ final class TDSChannel {
 
         // Now close the SSL socket. It will see that the proxy socket's streams
         // are closed and not try to do any further I/O over them.
-        try {
-            if (logger.isLoggable(Level.FINER))
-                logger.finer(toString() + " Closing SSL socket");
-
-            sslSocket.close();
-        }
-        catch (IOException e) {
-            // Don't care if we can't close the SSL socket. We're done with it anyway.
-            logger.fine("Ignored error closing SSLSocket: " + e.getMessage());
-        }
+        closeSSLSocket();
 
         // Do not close the proxy socket. Doing so would close our TCP socket
         // to which the proxy socket is bound. Instead, just null out the reference
@@ -2023,7 +2030,7 @@ final class TDSChannel {
 
     final void close() {
         if (null != sslSocket)
-            disableSSL();
+            closeSSLSocket();
 
         if (null != inputStream) {
             if (logger.isLoggable(Level.FINEST))
