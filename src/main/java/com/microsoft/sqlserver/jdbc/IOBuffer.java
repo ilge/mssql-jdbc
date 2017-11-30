@@ -2029,8 +2029,17 @@ final class TDSChannel {
     }
 
     final void close() {
-        if (null != sslSocket)
+        if (null != sslSocket) {
             closeSSLSocket();
+        } else if (null != tcpSocket) {
+            // the connection is not using SSL, but closing tcp gracefully doesn't terminate correctly
+            // so we will abort connection for non-SSL here...
+            try {
+                tcpSocket.setSoLinger(true, 0);
+            } catch (java.net.SocketException e) {
+                logger.finest(this.toString() + ": Ignored error setting so linger...");
+            }
+        }
 
         if (null != inputStream) {
             if (logger.isLoggable(Level.FINEST))
