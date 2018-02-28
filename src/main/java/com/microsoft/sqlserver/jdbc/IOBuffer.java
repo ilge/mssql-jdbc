@@ -654,6 +654,22 @@ final class TDSChannel {
     }
 
     /**
+     * Close SSL Socket without overriding streams.
+     */
+    void closeSSLSocket() {
+        try {
+            if (logger.isLoggable(Level.FINER))
+                logger.finer(toString() + " Closing SSL socket");
+
+            sslSocket.close();
+        }
+        catch (IOException e) {
+            // Don't care if we can't close the SSL socket. We're done with it anyway.
+            logger.fine("Ignored error closing SSLSocket: " + e.getMessage());
+        }
+    }
+
+    /**
      * Disables SSL on this TDS channel.
      */
     void disableSSL() {
@@ -698,16 +714,7 @@ final class TDSChannel {
 
         // Now close the SSL socket. It will see that the proxy socket's streams
         // are closed and not try to do any further I/O over them.
-        try {
-            if (logger.isLoggable(Level.FINER))
-                logger.finer(toString() + " Closing SSL socket");
-
-            sslSocket.close();
-        }
-        catch (IOException e) {
-            // Don't care if we can't close the SSL socket. We're done with it anyway.
-            logger.fine("Ignored error closing SSLSocket: " + e.getMessage());
-        }
+        closeSSLSocket();
 
         // Do not close the proxy socket. Doing so would close our TCP socket
         // to which the proxy socket is bound. Instead, just null out the reference
@@ -2022,8 +2029,17 @@ final class TDSChannel {
     }
 
     final void close() {
-        if (null != sslSocket)
-            disableSSL();
+        if (null != sslSocket) {
+            closeSSLSocket();
+        } else if (null != tcpSocket) {
+            // the connection is not using SSL, but closing tcp gracefully doesn't terminate correctly
+            // so we will abort connection for non-SSL here...
+            try {
+                tcpSocket.setSoLinger(true, 0);
+            } catch (java.net.SocketException e) {
+                logger.finest(this.toString() + ": Ignored error setting so linger...");
+            }
+        }
 
         if (null != inputStream) {
             if (logger.isLoggable(Level.FINEST))
@@ -2284,7 +2300,12 @@ final class SocketFinder {
             // inetAddrs is only used if useParallel is true or TNIR is true. Skip resolving address if that's not the case.
             if (useParallel || useTnir) {
                 // Ignore TNIR if host resolves to more than 64 IPs. Make sure we are using original timeout for this.
-                inetAddrs = InetAddress.getAllByName(hostName);
+                try {
+                    inetAddrs = InetAddress.getAllByName(hostName);
+                }
+                catch (java.net.UnknownHostException ex) {
+                    logger.finer("Failed to look up host");
+                }
 
                 if ((useTnir) && (inetAddrs.length > ipAddressLimit)) {
                     useTnir = false;
@@ -2629,8 +2650,8 @@ final class SocketFinder {
     private Socket getConnectedSocket(InetSocketAddress addr,
             int timeoutInMilliSeconds) throws IOException {
         assert timeoutInMilliSeconds != 0 : "timeout cannot be zero";
-        if (addr.isUnresolved())
-            throw new java.net.UnknownHostException();
+//        if (addr.isUnresolved())
+//            throw new java.net.UnknownHostException();
         selectedSocket = new Socket();
         selectedSocket.connect(addr, timeoutInMilliSeconds);
         return selectedSocket;
